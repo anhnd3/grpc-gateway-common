@@ -28,75 +28,54 @@ import (
 // ShutdownHook ...
 type ShutdownHook func()
 
-// BaseGrpcService is a httpServer wrapper that support AddShutdownHook
-type BaseGrpcService struct {
+// BaseGRPCService is a httpServer wrapper that support AddShutdownHook
+type BaseGRPCService struct {
 	name                   string
 	port                   int
 	listener               net.Listener
-	grpcRegister           GrpcRegister
+	gRPCRegister           GRPCRegister
 	httpRegister           HTTPRegister
 	hooks                  []ShutdownHook
 	rootPath               string
 	done                   chan error
 	httpInterceptors       []HTTPServerInterceptor
-	grpcUnaryInterceptors  []grpc.UnaryServerInterceptor
-	grpcStreamInterceptors []grpc.StreamServerInterceptor
+	gRPCUnaryInterceptors  []grpc.UnaryServerInterceptor
+	gRPCStreamInterceptors []grpc.StreamServerInterceptor
 	forwardRespFunc        func(context.Context, http.ResponseWriter, proto.Message) error
 }
 
-// HTTPServerInterceptor ...
-type HTTPServerInterceptor func(handler http.Handler) http.Handler
-
-// GrpcRegister ...
-type GrpcRegister func(server *grpc.Server)
+// GRPCRegister ...
+type GRPCRegister func(server *grpc.Server)
 
 // HTTPRegister ...
 type HTTPRegister func(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error)
 
-// NewGrpcServer return new service from handler, support consul
+// NewGRPCServer return new service from handler, support consul
 // name - service name, used to register with consul
 // port - service port
-func NewGrpcServer(name string, port int, grpcRegister GrpcRegister) *BaseGrpcService {
-	return &BaseGrpcService{
+func NewGRPCServer(name string, port int, gRPCRegister GRPCRegister) *BaseGRPCService {
+	return &BaseGRPCService{
 		name:            name,
 		port:            port,
-		grpcRegister:    grpcRegister,
+		gRPCRegister:    gRPCRegister,
 		hooks:           []ShutdownHook{},
 		forwardRespFunc: FormatHTTPResponse}
 }
 
 // WithResponseFunc ...
-func (s *BaseGrpcService) WithResponseFunc(fn func(context.Context, http.ResponseWriter, proto.Message) error) {
+func (s *BaseGRPCService) WithResponseFunc(fn func(context.Context, http.ResponseWriter, proto.Message) error) {
 	s.forwardRespFunc = fn
 }
 
 // EnableHTTP ...
-func (s *BaseGrpcService) EnableHTTP(httpRegister HTTPRegister, rootPath string) *BaseGrpcService {
+func (s *BaseGRPCService) EnableHTTP(httpRegister HTTPRegister, rootPath string) *BaseGRPCService {
 	s.rootPath = rootPath
 	s.httpRegister = httpRegister
 	return s
 }
 
-// HTTPMiddlewares ...
-func (s *BaseGrpcService) HTTPMiddlewares(interceptors ...HTTPServerInterceptor) *BaseGrpcService {
-	s.httpInterceptors = interceptors
-	return s
-}
-
-// GRPCUnaryInterceptors ...
-func (s *BaseGrpcService) GRPCUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) *BaseGrpcService {
-	s.grpcUnaryInterceptors = interceptors
-	return s
-}
-
-// GRPCStreamInterceptors ...
-func (s *BaseGrpcService) GRPCStreamInterceptors(interceptors ...grpc.StreamServerInterceptor) *BaseGrpcService {
-	s.grpcStreamInterceptors = interceptors
-	return s
-}
-
-// Run listen and serve servie
-func (s *BaseGrpcService) Run(port int) error {
+// Run listen and serve service
+func (s *BaseGRPCService) Run(port int) error {
 	s.port = port
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
@@ -104,18 +83,18 @@ func (s *BaseGrpcService) Run(port int) error {
 	}
 	s.listener = lis
 
-	sigs := make(chan os.Signal, 1)
+	sigChan := make(chan os.Signal, 1)
 	s.done = make(chan error, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go s.serve()
 	fmt.Println("Server now listening")
 
 	go func() {
-		sig := <-sigs
+		sig := <-sigChan
 		fmt.Println()
 		fmt.Println(sig)
-		s.runHook()
+		defer s.runHook()
 		s.done <- s.shutdown()
 	}()
 
@@ -125,18 +104,18 @@ func (s *BaseGrpcService) Run(port int) error {
 	return err
 }
 
-func (s *BaseGrpcService) addShutdownHook(fn ShutdownHook) {
+func (s *BaseGRPCService) addShutdownHook(fn ShutdownHook) {
 	s.hooks = append(s.hooks, fn)
 }
 
-func (s *BaseGrpcService) runHook() {
+func (s *BaseGRPCService) runHook() {
 	for _, hook := range s.hooks {
-		defer hook()
+		hook()
 	}
 }
 
 // Shutdown ...
-func (s *BaseGrpcService) shutdown() error {
+func (s *BaseGRPCService) shutdown() error {
 	if s.listener != nil {
 		err := s.listener.Close()
 		s.listener = nil
@@ -148,45 +127,45 @@ func (s *BaseGrpcService) shutdown() error {
 	return nil
 }
 
-func (s *BaseGrpcService) serve() {
+func (s *BaseGRPCService) serve() {
 	if s.httpRegister != nil {
 		m := cmux.New(s.listener)
-		grpcListener := m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
+		gRPCListener := m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
 		httpListener := m.Match(cmux.HTTP1Fast())
 
 		g := new(errgroup.Group)
-		g.Go(func() error { return s.grpcServe(grpcListener) })
+		g.Go(func() error { return s.gRPCServe(gRPCListener) })
 		g.Go(func() error { return s.httpServe(httpListener) })
 		g.Go(func() error { return m.Serve() })
 
 		g.Wait()
 	} else {
-		s.grpcServe(s.listener)
+		s.gRPCServe(s.listener)
 	}
 }
 
-func (s *BaseGrpcService) grpcServe(l net.Listener) error {
+func (s *BaseGRPCService) gRPCServe(l net.Listener) error {
 	// alwaysLoggingDeciderServer := func(ctx context.Context, fullMethodName string, servingObject interface{}) bool { return true }
 
 	sIntOpt := grpc.StreamInterceptor(gRPCMiddleware.ChainStreamServer(
 		gRPCCtxTags.StreamServerInterceptor(gRPCCtxTags.WithFieldExtractor(gRPCCtxTags.CodeGenRequestFieldExtractor)),
 		gRPCRecovery.StreamServerInterceptor(),
-		gRPCMiddleware.ChainStreamServer(s.grpcStreamInterceptors...),
+		gRPCMiddleware.ChainStreamServer(s.gRPCStreamInterceptors...),
 	))
 
 	uIntOpt := grpc.UnaryInterceptor(gRPCMiddleware.ChainUnaryServer(
 		gRPCCtxTags.UnaryServerInterceptor(gRPCCtxTags.WithFieldExtractor(gRPCCtxTags.CodeGenRequestFieldExtractor)),
 		gRPCRecovery.UnaryServerInterceptor(),
-		gRPCMiddleware.ChainUnaryServer(s.grpcUnaryInterceptors...),
+		gRPCMiddleware.ChainUnaryServer(s.gRPCUnaryInterceptors...),
 	))
 
 	server := grpc.NewServer(sIntOpt, uIntOpt)
-	s.grpcRegister(server)
+	s.gRPCRegister(server)
 	reflection.Register(server)
 	return server.Serve(l)
 }
 
-func (s *BaseGrpcService) httpServe(l net.Listener) error {
+func (s *BaseGRPCService) httpServe(l net.Listener) error {
 	ctx := context.Background()
 
 	mux := runtime.NewServeMux(
