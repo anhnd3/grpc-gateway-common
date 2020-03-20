@@ -103,14 +103,14 @@ func (s *BaseGRPCService) AddShutdownHook(fn ShutdownHook) {
 	s.hooks = append(s.hooks, fn)
 }
 
-func (s *BaseGRPCService) RunHook() {
+func (s *BaseGRPCService) runHook() {
 	for _, hook := range s.hooks {
 		hook()
 	}
 }
 
 // Shutdown ...
-func (s *BaseGRPCService) Shutdown() error {
+func (s *BaseGRPCService) shutdown() error {
 	if s.listener != nil {
 		err := s.listener.Close()
 		s.listener = nil
