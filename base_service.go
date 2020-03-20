@@ -99,18 +99,18 @@ func (s *BaseGRPCService) Run(port int) error {
 	return err
 }
 
-func (s *BaseGRPCService) addShutdownHook(fn ShutdownHook) {
+func (s *BaseGRPCService) AddShutdownHook(fn ShutdownHook) {
 	s.hooks = append(s.hooks, fn)
 }
 
-func (s *BaseGRPCService) runHook() {
+func (s *BaseGRPCService) RunHook() {
 	for _, hook := range s.hooks {
 		hook()
 	}
 }
 
 // Shutdown ...
-func (s *BaseGRPCService) shutdown() error {
+func (s *BaseGRPCService) Shutdown() error {
 	if s.listener != nil {
 		err := s.listener.Close()
 		s.listener = nil
