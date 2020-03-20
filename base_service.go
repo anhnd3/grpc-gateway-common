@@ -3,7 +3,6 @@ package grpc_gateway_common
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -11,18 +10,14 @@ import (
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
+	gRPCMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	gRPCRecovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
+	gRPCCtxTags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
-
-	gRPCMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	gRPCRecovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	gRPCCtxTags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 )
 
 // ShutdownHook ...
@@ -200,63 +195,4 @@ func (s *BaseGRPCService) httpServe(l net.Listener) error {
 	server := &http.Server{Handler: handlerMiddleware}
 
 	return server.Serve(l)
-}
-
-// FormatHTTPResponse support sync cookie to response
-func FormatHTTPResponse(ctx context.Context, w http.ResponseWriter, resp proto.Message) error {
-	// md, _ := runtime.ServerMetadataFromContext(ctx)
-	return nil
-}
-
-// AppendRequestMetadata append cookies and headers to incoming context
-func AppendRequestMetadata(ctx context.Context, req *http.Request) metadata.MD {
-	md := metadata.MD{}
-
-	// Append cookies
-	cookies := req.Cookies()
-	for _, cookie := range cookies {
-		md.Append(cookie.Name, cookie.Value)
-	}
-
-	// Append ip
-	clientIP := "" //GetClientIP(req)
-	md.Append("x-client-ip", clientIP)
-
-	return md
-}
-
-// HandleCrossOrigin serve OPTIONS method for CORS policy
-func HandleCrossOrigin(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			handler.ServeHTTP(w, r)
-		}
-	})
-}
-
-// TransformErrors transform function errors to HTTP errors
-func TransformErrors(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
-	const fallback = `{"error":{"code":-1,"message":"failed to marshal error message"}}`
-
-	s, _ := status.FromError(err)
-
-	w.Header().Del("Trailer")
-
-	contentType := marshaler.ContentType()
-	// Check marshaler on run time in order to keep backwards compatability
-	// An interface param needs to be added to the ContentType() function on
-	// the Marshal interface to be able to remove this check
-	if httpBodyMarshaler, ok := marshaler.(*runtime.HTTPBodyMarshaler); ok {
-		pb := s.Proto()
-		contentType = httpBodyMarshaler.ContentTypeFromMessage(pb)
-	}
-	w.Header().Set("Content-Type", contentType)
-
-	w.WriteHeader(http.StatusInternalServerError)
-	if _, err := io.WriteString(w, fallback); err != nil {
-		grpclog.Infof("Failed to write response: %v", err)
-	}
-	return
 }
