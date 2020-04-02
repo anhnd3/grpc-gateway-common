@@ -2,16 +2,17 @@ package grpc_gateway_common
 
 import (
 	"context"
+	"io"
+	"net/http"
+
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
-	"io"
-	"net/http"
 )
 
 // TransformErrors transform function errors to HTTP errors
 func TransformErrors(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
-	const fallback = `{"error":{"code":-1,"message":"failed to marshal error message"}}`
+	const fallback = `{"error":{"code":-1,"message":"Something went wrong"}}`
 
 	s, _ := status.FromError(err)
 
